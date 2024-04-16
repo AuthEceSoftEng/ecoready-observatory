@@ -1,0 +1,96 @@
+#version: "3.5"
+services:
+
+  kafka1:
+    image: confluentinc/cp-kafka:latest
+    hostname: kafka1
+    container_name: kafka1
+    restart: always
+    ports:
+      - "59092:59092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'BROKER://kafka1:19092,EXTERNAL://localhost:59092'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:29093'
+      KAFKA_LISTENERS: 'BROKER://kafka1:19092,CONTROLLER://kafka1:29093,EXTERNAL://0.0.0.0:59092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'BROKER'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      CLUSTER_ID: 'YBAQFynBRF6fEUbg_J3u7A'
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/configs/kafka_server_jaas.conf"
+      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+      KAFKA_SUPER_USERS: User:Admin;User:ANONYMOUS
+    volumes:
+       - ./kafka.jaas.conf:/etc/kafka/configs/kafka_server_jaas.conf
+  kafka-ui:
+    image: provectuslabs/kafka-ui
+    container_name: kafka-ui-kraft
+    ports:
+      - '18080:8080'
+    restart: always
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka1:19092
+      - AUTH_TYPE=LOGIN_FORM
+      - SPRING_SECURITY_USER_NAME=user_eco
+      - SPRING_SECURITY_USER_PASSWORD=pass_eco
+  ksqldb-server:
+    image: confluentinc/cp-ksqldb-server:latest
+    hostname: ksqldb-server
+    container_name: ksqldb-server
+    restart: always
+    depends_on:
+      - kafka1
+    ports:
+      - "28088:28088"
+    environment:
+      KSQL_CONFIG_DIR: "/etc/ksql"
+      KSQL_BOOTSTRAP_SERVERS: "kafka1:19092"
+      KSQL_HOST_NAME: ksqldb-server1
+      KSQL_LISTENERS: "http://0.0.0.0:28088"
+      KSQL_CACHE_MAX_BYTES_BUFFERING: 0
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_REPLICATION_FACTOR: 1
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE: 'true'
+      KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: 'true'
+  ksqldb-cli:
+    image: confluentinc/cp-ksqldb-cli:latest
+    container_name: ksqldb-cli
+    restart: always
+    depends_on:
+      - kafka1
+      - ksqldb-server
+    entrypoint: /bin/sh
+    tty: true
+  jobmanager:
+    image: flink:latest
+    restart: always
+    ports:
+      - "48081:8081"
+    command: jobmanager
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=jobmanager
+  taskmanager:
+    image: flink:latest
+    restart: always
+    depends_on:
+      - jobmanager
+    command: taskmanager
+    links:
+      - "jobmanager:jobmanager"
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=jobmanager
+  cassandra:
+   image: cassandra:4.1.0
+   container_name: cassandra
+   ports:
+     - '9042:9042'
+   restart: always
+   volumes:
+     - ./scripts:/scripts
